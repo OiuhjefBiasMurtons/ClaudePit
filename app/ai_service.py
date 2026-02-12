@@ -35,7 +35,12 @@ TOOLS = [
                             "type": "object",
                             "properties": {
                                 "variant_id": {"type": "string"},
-                                "quantity": {"type": "integer"}
+                                "quantity": {"type": "integer"},
+                                "sabores_extra": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Sabores adicionales para pizzas multi-sabor (max 1 extra, Familiar max 2 extra)"
+                                }
                             },
                             "required": ["variant_id", "quantity"]
                         }
@@ -49,7 +54,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_new_order",
-            "description": "Crea el pedido final. Requiere: items con variant_id, método de pago (efectivo/transferencia), y dirección confirmada.",
+            "description": "Crea el pedido final. Requiere: items con variant_id, método de pago (efectivo/transferencia), dirección confirmada, y barrio.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -61,7 +66,12 @@ TOOLS = [
                             "properties": {
                                 "variant_id": {"type": "string"},
                                 "quantity": {"type": "integer"},
-                                "note": {"type": "string"}
+                                "note": {"type": "string"},
+                                "sabores_extra": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Sabores adicionales para pizzas multi-sabor"
+                                }
                             },
                             "required": ["variant_id", "quantity"]
                         }
@@ -73,9 +83,13 @@ TOOLS = [
                     "payment_method": {
                         "type": "string",
                         "description": "Método de pago: 'efectivo' o 'transferencia'"
+                    },
+                    "barrio": {
+                        "type": "string",
+                        "description": "Nombre del barrio de entrega (debe existir en la lista de cobertura)"
                     }
                 },
-                "required": ["items", "delivery_address", "payment_method"]
+                "required": ["items", "delivery_address", "payment_method", "barrio"]
             }
         }
     },
@@ -95,7 +109,12 @@ TOOLS = [
                             "properties": {
                                 "variant_id": {"type": "string"},
                                 "quantity": {"type": "integer"},
-                                "note": {"type": "string"}
+                                "note": {"type": "string"},
+                                "sabores_extra": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Sabores adicionales para pizzas multi-sabor"
+                                }
                             },
                             "required": ["variant_id", "quantity"]
                         }
@@ -185,10 +204,9 @@ TOOLS = [
 ]
 
 
-def build_system_prompt(nombre_cliente, direccion_guardada, order_id, estado_pedido, menu_formateado, pedido_info="", cobra_domicilio=False):
+def build_system_prompt(nombre_cliente, direccion_guardada, order_id, estado_pedido, menu_formateado, pedido_info="", barrios_formateados="[]"):
 
-    saludo = f"Hola {nombre_cliente} 👋 Soy el bot de Taller de la Pizza. ¿Qué deseas pedir?"
-    total_text = "Total estimado: $[Monto] (+ costo de envío según zona)" if cobra_domicilio else "Total: $[Monto]"
+    saludo = f"Hola {nombre_cliente} 👋 Soy el bot de Taller de la Pizza. ¿En qué barrio te encuentras?"
 
     return f"""
 <asistente_virtual>
@@ -209,6 +227,20 @@ def build_system_prompt(nombre_cliente, direccion_guardada, order_id, estado_ped
 {menu_formateado}
 </menu_oficial>
 
+<barrios_cobertura formato="JSON">
+{barrios_formateados}
+</barrios_cobertura>
+
+<regla_multi_sabor>
+  Las pizzas pueden tener hasta 2 sabores (la Familiar hasta 3 sabores).
+  - Si el cliente pide "mitad X mitad Y": usa el variant_id del PRIMER sabor para el tamaño/precio, y agrega los nombres de los otros sabores en sabores_extra
+  - El precio NO cambia por tener multiples sabores
+  - Para pizzas Familiar: maximo 3 sabores total. Para otros tamaños: maximo 2 sabores total
+  - Formato en items: {{"variant_id": "<id_primer_sabor>", "quantity": 1, "sabores_extra": ["Segundo Sabor"]}}
+  - Para mostrar al cliente: "Pizza Hawaiana/Pepperoni Grande"
+  - sabores_extra SOLO aplica para pizzas, NO para lasañas ni otros productos
+</regla_multi_sabor>
+
 <regla_critica nombre="TOOL_CALLS">
 Al llamar funciones, usa SIEMPRE el 'id' que aparece dentro de 'sizes' como 'variant_id'.
 NUNCA inventes IDs ni uses el nombre del producto.
@@ -218,6 +250,17 @@ Formato: [{{"variant_id": "&lt;id_del_menu&gt;", "quantity": &lt;numero&gt;}}]
 <flujo_pedido_nuevo condicion="order_id == 'N/A'">
 
   <saludo>{saludo}</saludo>
+
+  <paso numero="0" nombre="Verificar cobertura">
+    <instrucciones>
+      - ANTES de tomar cualquier pedido, pregunta: "Para verificar cobertura, ¿en qué barrio te encuentras?"
+      - Busca el barrio del cliente en la lista de &lt;barrios_cobertura&gt; (comparación flexible, sin importar mayúsculas/tildes)
+      - Si el barrio EXISTE en la lista: informa el costo de domicilio y continúa al paso 1. Ejemplo: "Tenemos cobertura en [barrio]. El domicilio es de $[precio]. ¿Qué deseas pedir?"
+      - Si el barrio NO EXISTE: "Lo siento, por ahora no tenemos cobertura en [barrio]." y lista los barrios disponibles
+      - Si el cliente ya mencionó el barrio en la conversación, NO vuelvas a preguntar
+      - Recuerda el barrio durante toda la conversación para usarlo al crear el pedido
+    </instrucciones>
+  </paso>
 
   <paso numero="1" nombre="Recolectar items">
     <instrucciones>
@@ -242,7 +285,9 @@ Formato: [{{"variant_id": "&lt;id_del_menu&gt;", "quantity": &lt;numero&gt;}}]
 Tu pedido:
 - [Cant]x [Producto] [Tamaño] - $[Precio]
 
-{total_text}
+*Subtotal:* $[Monto]
+*Domicilio ([barrio]):* $[precio_domicilio]
+*Total:* $[Subtotal + Domicilio]
       </formato_respuesta>
     </si_ok>
   </paso>
@@ -271,13 +316,16 @@ Tu pedido:
   </paso>
 
   <paso numero="4" nombre="Crear pedido">
-    <condicion>Cuando tengas: Items + Pago confirmado + Dirección confirmada</condicion>
-    <accion>Llama: create_new_order</accion>
-    
+    <condicion>Cuando tengas: Items + Pago confirmado + Dirección confirmada + Barrio confirmado</condicion>
+    <accion>Llama: create_new_order (incluye el nombre del barrio como parámetro "barrio")</accion>
+
     <respuesta_final>
 ¡Listo! 🎉
 *Dirección:* [Dirección final]
+*Barrio:* [Barrio]
 *Método de pago:* [Efectivo/Transferencia]
+*Subtotal:* $[Subtotal productos]
+*Domicilio:* $[Precio domicilio]
 *Total a pagar:* $[Total definitivo] 🍕
     </respuesta_final>
   </paso>
@@ -540,7 +588,8 @@ def call_openai(
                         client_id=client_id,
                         items=arguments.get("items", []),
                         delivery_address=arguments.get("delivery_address", ""),
-                        payment_method=arguments.get("payment_method", "efectivo")
+                        payment_method=arguments.get("payment_method", "efectivo"),
+                        barrio=arguments.get("barrio", "")
                     )
                 elif function_name == "add_items_to_order":
                     result = add_items_to_order(

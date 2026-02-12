@@ -43,6 +43,14 @@ def format_menu_for_ai(menu_items: list) -> str:
 
 
 
+def format_barrios_for_ai(barrios: list) -> str:
+    """Formatea la lista de barrios como JSON para la IA."""
+    import json
+    if not barrios:
+        return "[]"
+    return json.dumps(barrios, ensure_ascii=False, indent=2)
+
+
 def generate_ticket_id() -> str:
     """
     Genera ID único tipo "TDP-20250119-001"

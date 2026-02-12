@@ -99,7 +99,7 @@ class TestCreateOrder:
         mock_client = MagicMock()
         mock_supabase.return_value = mock_client
 
-        # Mock para validación de variant_ids (retorna que el ID existe)
+        # Mock para validación de variant_ids, barrios, etc.
         def table_side_effect(table_name):
             mock_table = MagicMock()
             if table_name == "product_variants":
@@ -107,13 +107,18 @@ class TestCreateOrder:
                 mock_table.select.return_value.in_.return_value.execute.return_value.data = [
                     {"id": "variant-1"}
                 ]
+            elif table_name == "barrios":
+                # Mock para búsqueda de barrio
+                mock_table.select.return_value.ilike.return_value.eq.return_value.execute.return_value.data = [
+                    {"id": "barrio-uuid-1", "nombre": "Laureles", "precio_domicilio": 5000}
+                ]
             elif table_name == "orders":
                 # Mock para insert y select de orders
                 mock_table.insert.return_value.execute.return_value.data = [
                     {"id": "order-uuid-123"}
                 ]
                 mock_table.select.return_value.eq.return_value.execute.return_value.data = [
-                    {"id": "order-uuid-123", "total_order": 40.00, "ticket_id": "TDP-20250120-001"}
+                    {"id": "order-uuid-123", "total_order": 40000, "ticket_id": "TDP-20250120-001", "precio_domicilio": 5000}
                 ]
             elif table_name == "order_details":
                 mock_table.insert.return_value.execute.return_value.data = [{}]
@@ -127,17 +132,53 @@ class TestCreateOrder:
             items=[
                 {"variant_id": "variant-1", "quantity": 2, "note": "sin cebolla"}
             ],
-            delivery_address="Calle 123"
+            delivery_address="Calle 123",
+            barrio="Laureles"
         )
 
         # Verify
         assert result["order_id"] == "order-uuid-123"
         assert result["ticket_id"] == "TDP-20250120-001"
-        assert result["total"] == 40.00
+        assert result["subtotal"] == 40000
+        assert result["precio_domicilio"] == 5000
+        assert result["total"] == 45000
         assert result["address"] == "Calle 123"
+        assert result["barrio"] == "Laureles"
 
         # Verify table calls
         assert mock_client.table.called
+
+    @patch("app.tools.get_supabase_client")
+    def test_create_order_invalid_barrio(self, mock_supabase):
+        """Verifica que create_new_order rechaza barrios sin cobertura."""
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: barrio no encontrado
+        mock_table = MagicMock()
+        mock_table.select.return_value.ilike.return_value.eq.return_value.execute.return_value.data = []
+        mock_client.table.return_value = mock_table
+
+        result = create_new_order(
+            client_id="client-uuid",
+            items=[{"variant_id": "variant-1", "quantity": 1}],
+            delivery_address="Calle 123",
+            barrio="BarrioInexistente"
+        )
+
+        assert "error" in result
+        assert "cobertura" in result["error"].lower()
+
+    def test_create_order_missing_barrio(self):
+        """Verifica que create_new_order rechaza pedidos sin barrio."""
+        result = create_new_order(
+            client_id="client-uuid",
+            items=[{"variant_id": "variant-1", "quantity": 1}],
+            delivery_address="Calle 123",
+            barrio=""
+        )
+
+        assert "error" in result
 
 
 class TestSecurityValidation:

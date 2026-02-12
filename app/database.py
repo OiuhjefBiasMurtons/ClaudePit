@@ -38,6 +38,17 @@ def get_or_create_client(telefono: str, nombre: str) -> dict:
     return result.data[0]
 
 
+def get_barrios() -> list:
+    """Obtiene los barrios activos con cobertura de delivery."""
+    supabase = get_supabase_client()
+    result = supabase.table("barrios") \
+        .select("id, nombre, precio_domicilio") \
+        .eq("activo", True) \
+        .order("nombre") \
+        .execute()
+    return result.data
+
+
 def get_menu() -> list:
     supabase = get_supabase_client()
     # JOIN entre products y product_variants usando la sintaxis correcta de Supabase

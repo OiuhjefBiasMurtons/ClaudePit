@@ -2,8 +2,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import logging
 
-from app.database import get_or_create_client, get_menu
-from app.utils import format_menu_for_ai
+from app.database import get_or_create_client, get_menu, get_barrios
+from app.utils import format_menu_for_ai, format_barrios_for_ai
 from app.ai_service import build_system_prompt, call_openai
 from app.tools import get_active_order
 from app.memory import add_message, get_conversation_history, clear_old_conversations, update_conversation_history
@@ -53,15 +53,17 @@ async def process_message(request: MessageRequest):
         # Limpiar conversaciones viejas (>2 horas)
         clear_old_conversations(max_age_minutes=120)
 
-        # Obtener cliente y menú
+        # Obtener cliente, menú y barrios
         cliente = get_or_create_client(request.telefono, request.nombre_cliente)
         menu_items = get_menu()
+        barrios = get_barrios()
 
         # Obtener pedido activo si existe
         pedido_activo = get_active_order(cliente["id"])
 
-        # Formatear menú para IA
+        # Formatear menú y barrios para IA
         menu_formateado = format_menu_for_ai(menu_items)
+        barrios_formateados = format_barrios_for_ai(barrios)
 
         # Obtener historial de conversación
         conversation_history = get_conversation_history(request.telefono)
@@ -71,11 +73,16 @@ async def process_message(request: MessageRequest):
         if pedido_activo and pedido_activo.get("items"):
             items_desc = []
             total = pedido_activo.get("total_order", 0)
+            precio_dom = pedido_activo.get("precio_domicilio", 0)
             for item in pedido_activo["items"]:
-                items_desc.append(f"{item.get('quantity')}x {item.get('product_name')} {item.get('variant_name')}")
-            pedido_info = f"Items: {', '.join(items_desc)} | Total: ${total:,.0f} | Dirección: {pedido_activo.get('address_delivery', 'sin definir')}"
+                nombre = item.get('product_name')
+                sabores_extra = item.get('sabores_extra')
+                if sabores_extra:
+                    nombre += "/" + "/".join(sabores_extra)
+                items_desc.append(f"{item.get('quantity')}x {nombre} {item.get('variant_name')}")
+            pedido_info = f"Items: {', '.join(items_desc)} | Subtotal: ${total:,.0f} | Domicilio: ${precio_dom:,.0f} | Total: ${total + precio_dom:,.0f} | Dirección: {pedido_activo.get('address_delivery', 'sin definir')}"
 
-        # Construir prompt y llamar a OpenAI (AHORA RETORNA TUPLA)
+        # Construir prompt y llamar a OpenAI
         system_prompt = build_system_prompt(
             nombre_cliente=cliente.get("name", "Cliente"),
             direccion_guardada=cliente.get("address"),
@@ -83,7 +90,7 @@ async def process_message(request: MessageRequest):
             estado_pedido=pedido_activo.get("state", "N/A") if pedido_activo else "N/A",
             menu_formateado=menu_formateado,
             pedido_info=pedido_info,
-            cobra_domicilio=False  # Ajusta según tu lógica de negocio
+            barrios_formateados=barrios_formateados
         )
         respuesta, new_history = call_openai(
             request.mensaje,

@@ -69,7 +69,8 @@ def calculate_order_preview(items: list) -> dict:
             "variant_name": variant["nombre_variante"],
             "quantity": quantity,
             "unit_price": price,
-            "subtotal": subtotal
+            "subtotal": subtotal,
+            "sabores_extra": item.get("sabores_extra", [])
         })
 
     return {
@@ -78,15 +79,80 @@ def calculate_order_preview(items: list) -> dict:
     }
 
 
-def create_new_order(client_id: str, items: list, delivery_address: str, payment_method: str = "efectivo") -> dict:
+def _format_order_items(details_data: list) -> list:
+    """
+    Formatea los items de order_details para retornar al bot.
+    Filtra items con quantity <= 0 e incluye sabores_extra.
+    """
+    items_list = []
+    for detail in details_data:
+        quantity = detail.get("quantity", 1)
+        if quantity <= 0:
+            continue
+
+        variant = detail.get("product_variants", {})
+        product = variant.get("products", {})
+        items_list.append({
+            "quantity": quantity,
+            "product_name": product.get("name", "producto"),
+            "variant_name": variant.get("nombre_variante", ""),
+            "price": variant.get("price", 0),
+            "note": detail.get("note", ""),
+            "variant_id": detail.get("variant_id", ""),
+            "sabores_extra": detail.get("sabores_extra") or []
+        })
+    return items_list
+
+
+def _build_product_snapshot(supabase, variant_id: str, sabores_extra: list | None) -> str | None:
+    """
+    Construye el nombre_producto_snapshot para items con sabores extra.
+    Retorna None si no hay sabores extra (el trigger lo maneja).
+    """
+    if not sabores_extra:
+        return None
+
+    result = supabase.table("product_variants").select(
+        "nombre_variante, products(name)"
+    ).eq("id", variant_id).execute()
+
+    if not result.data:
+        return None
+
+    variant = result.data[0]
+    base_name = variant.get("products", {}).get("name", "Pizza")
+    variant_name = variant.get("nombre_variante", "")
+    flavors = "/".join([base_name] + sabores_extra)
+    return f"{flavors} - {variant_name}"
+
+
+def create_new_order(client_id: str, items: list, delivery_address: str, payment_method: str = "efectivo", barrio: str = "") -> dict:
     """
     Crea un nuevo pedido.
 
-    items: lista de dicts con {variant_id, quantity, note}
+    items: lista de dicts con {variant_id, quantity, note, sabores_extra}
     payment_method: método de pago ("efectivo" o "transferencia")
+    barrio: nombre del barrio de entrega
     """
-    logger.info(f"create_new_order llamado con {len(items)} items: {items}, payment_method: {payment_method}")
+    logger.info(f"create_new_order llamado con {len(items)} items: {items}, payment_method: {payment_method}, barrio: {barrio}")
     supabase = get_supabase_client()
+
+    # Validar barrio y obtener precio de domicilio
+    if not barrio:
+        return {"error": "Debes indicar el barrio de entrega."}
+
+    barrio_result = supabase.table("barrios") \
+        .select("id, nombre, precio_domicilio") \
+        .ilike("nombre", barrio) \
+        .eq("activo", True) \
+        .execute()
+
+    if not barrio_result.data:
+        return {"error": f"No tenemos cobertura en el barrio '{barrio}'. Consulta los barrios disponibles."}
+
+    barrio_data = barrio_result.data[0]
+    barrio_id = barrio_data["id"]
+    precio_domicilio = barrio_data["precio_domicilio"]
 
     # Validar que los variant_ids existan
     valid_items, invalid_items = validate_variant_ids(supabase, items)
@@ -105,12 +171,14 @@ def create_new_order(client_id: str, items: list, delivery_address: str, payment
     if not valid_items:
         return {"error": "No hay items válidos para crear el pedido."}
 
-    # Crear orden (sin ticket_id ni total_order, la BD los genera automáticamente)
+    # Crear orden con barrio y precio de domicilio
     order_data = {
         "client_id": client_id,
         "address_delivery": delivery_address,
         "payment_method": payment_method.lower(),
-        "state": "PREPARANDO"
+        "state": "PREPARANDO",
+        "barrio_id": barrio_id,
+        "precio_domicilio": precio_domicilio
     }
     order_result = supabase.table("orders").insert(order_data).execute()
     order = order_result.data[0]
@@ -118,12 +186,19 @@ def create_new_order(client_id: str, items: list, delivery_address: str, payment
 
     # Insertar items validados
     for item in valid_items:
+        sabores_extra = item.get("sabores_extra")
+        snapshot = _build_product_snapshot(supabase, item["variant_id"], sabores_extra)
+
         detail_data = {
             "order_id": order_id,
             "variant_id": item["variant_id"],
             "quantity": item.get("quantity", 1),
-            "note": item.get("note", "")
+            "note": item.get("note", ""),
+            "sabores_extra": sabores_extra
         }
+        if snapshot:
+            detail_data["nombre_producto_snapshot"] = snapshot
+
         supabase.table("order_details").insert(detail_data).execute()
 
     # Actualizar dirección del cliente para futuros pedidos
@@ -131,11 +206,15 @@ def create_new_order(client_id: str, items: list, delivery_address: str, payment
 
     # Leer order actualizado para obtener total calculado por trigger
     updated_order = supabase.table("orders").select("*").eq("id", order_id).execute()
+    subtotal = updated_order.data[0].get("total_order", 0)
 
     return {
         "order_id": order_id,
         "ticket_id": updated_order.data[0].get("ticket_id"),
-        "total": updated_order.data[0].get("total_order", 0),
+        "subtotal": subtotal,
+        "precio_domicilio": precio_domicilio,
+        "total": subtotal + precio_domicilio,
+        "barrio": barrio_data["nombre"],
         "address": delivery_address,
         "payment_method": payment_method
     }
@@ -164,27 +243,7 @@ def get_active_order(client_id: str) -> dict | None:
         .eq("order_id", order["id"]) \
         .execute()
 
-    # Formatear items con información completa (filtrar quantity <= 0)
-    items_list = []
-    for detail in details_result.data:
-        quantity = detail.get("quantity", 1)
-
-        # Ignorar items con cantidad <= 0 (borrados o cantidades negativas erróneas)
-        if quantity <= 0:
-            continue
-
-        variant = detail.get("product_variants", {})
-        product = variant.get("products", {})
-        items_list.append({
-            "quantity": quantity,
-            "product_name": product.get("name", "producto"),
-            "variant_name": variant.get("nombre_variante", ""),
-            "price": variant.get("price", 0),
-            "note": detail.get("note", ""),
-            "variant_id": detail.get("variant_id", "")
-        })
-
-    order["items"] = items_list
+    order["items"] = _format_order_items(details_result.data)
 
     return order
 
@@ -272,12 +331,19 @@ def add_items_to_order(order_id: str, items: list, client_id: str) -> dict:
             return {"error": f"La cantidad debe ser positiva (mayor a 0), recibido: {quantity}"}
 
     for item in valid_items:
+        sabores_extra = item.get("sabores_extra")
+        snapshot = _build_product_snapshot(supabase, item["variant_id"], sabores_extra)
+
         detail_data = {
             "order_id": order_id,
             "variant_id": item["variant_id"],
             "quantity": item.get("quantity", 1),
-            "note": item.get("note", "")
+            "note": item.get("note", ""),
+            "sabores_extra": sabores_extra
         }
+        if snapshot:
+            detail_data["nombre_producto_snapshot"] = snapshot
+
         supabase.table("order_details").insert(detail_data).execute()
 
     # Leer order actualizado para obtener total calculado por trigger
@@ -290,27 +356,15 @@ def add_items_to_order(order_id: str, items: list, client_id: str) -> dict:
         .execute()
 
     # Formatear items para el bot (filtrar quantity <= 0)
-    items_list = []
-    for detail in details_result.data:
-        quantity = detail.get("quantity", 1)
-
-        # Ignorar items con cantidad <= 0
-        if quantity <= 0:
-            continue
-
-        variant = detail.get("product_variants", {})
-        product = variant.get("products", {})
-        items_list.append({
-            "quantity": quantity,
-            "product_name": product.get("name", "producto"),
-            "variant_name": variant.get("nombre_variante", ""),
-            "price": variant.get("price", 0),
-            "note": detail.get("note", "")
-        })
+    items_list = _format_order_items(details_result.data)
+    subtotal = updated_order.data[0].get("total_order", 0)
+    precio_domicilio = updated_order.data[0].get("precio_domicilio", 0)
 
     return {
         "order_id": order_id,
-        "total": updated_order.data[0].get("total_order", 0),
+        "subtotal": subtotal,
+        "precio_domicilio": precio_domicilio,
+        "total": subtotal + precio_domicilio,
         "items": items_list,
         "address": updated_order.data[0].get("address_delivery", ""),
         "message": "Items agregados correctamente"
@@ -392,29 +446,18 @@ def replace_item_in_order(order_id: str, old_variant_id: str, new_variant_id: st
         .eq("order_id", order_id) \
         .execute()
 
-    # Formatear items (filtrar quantity <= 0)
-    items_list = []
-    for detail in details_result.data:
-        qty = detail.get("quantity", 1)
-        if qty <= 0:
-            continue
-
-        variant = detail.get("product_variants", {})
-        product = variant.get("products", {})
-        items_list.append({
-            "quantity": qty,
-            "product_name": product.get("name", "producto"),
-            "variant_name": variant.get("nombre_variante", ""),
-            "price": variant.get("price", 0),
-            "note": detail.get("note", "")
-        })
+    items_list = _format_order_items(details_result.data)
+    subtotal = updated_order.data[0].get("total_order", 0)
+    precio_domicilio = updated_order.data[0].get("precio_domicilio", 0)
 
     return {
         "order_id": order_id,
-        "total": updated_order.data[0].get("total_order", 0),
+        "subtotal": subtotal,
+        "precio_domicilio": precio_domicilio,
+        "total": subtotal + precio_domicilio,
         "items": items_list,
         "address": updated_order.data[0].get("address_delivery", ""),
-        "message": f"Item reemplazado correctamente"
+        "message": "Item reemplazado correctamente"
     }
 
 
@@ -541,23 +584,9 @@ def get_client_orders(client_id: str, include_completed: bool = False, limit: in
                 .eq("order_id", order["id"]) \
                 .execute()
 
-            # Formatear items (filtrar quantity <= 0)
-            items_list = []
-            for detail in details_result.data:
-                quantity = detail.get("quantity", 1)
-
-                # Ignorar items corruptos
-                if quantity <= 0:
-                    continue
-
-                variant = detail.get("product_variants", {})
-                product = variant.get("products", {})
-                items_list.append({
-                    "quantity": quantity,
-                    "product_name": product.get("name", "producto"),
-                    "variant_name": variant.get("nombre_variante", ""),
-                    "price": variant.get("price", 0)
-                })
+            items_list = _format_order_items(details_result.data)
+            subtotal = order.get("total_order", 0)
+            precio_domicilio = order.get("precio_domicilio", 0)
 
             # Agregar pedido formateado
             orders_list.append({
@@ -565,7 +594,9 @@ def get_client_orders(client_id: str, include_completed: bool = False, limit: in
                 "ticket_id": order.get("ticket_id", ""),
                 "state": order.get("state", ""),
                 "items": items_list,
-                "total": order.get("total_order", 0),
+                "subtotal": subtotal,
+                "precio_domicilio": precio_domicilio,
+                "total": subtotal + precio_domicilio,
                 "address": order.get("address_delivery", ""),
                 "payment_method": order.get("payment_method", ""),
                 "created_at": order.get("created_at", "")
