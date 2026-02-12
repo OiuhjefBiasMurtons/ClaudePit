@@ -43,10 +43,27 @@ def clear_old_conversations(max_age_minutes: int = 30):
     to_delete = []
 
     for telefono, data in conversations.items():
-        if data["last_activity"] < cutoff:
+        # Usar last_activity o timestamp (compatibilidad) o marcar para borrar si no tiene
+        last_activity = data.get("last_activity") or data.get("timestamp")
+        if not last_activity or last_activity < cutoff:
             to_delete.append(telefono)
 
     for telefono in to_delete:
         del conversations[telefono]
 
     return len(to_delete)
+
+def update_conversation_history(telefono: str, new_history: list):
+    """
+    Actualiza el historial completo de conversación.
+    Reemplaza el historial anterior con el nuevo (limitado a últimos 20 mensajes).
+    """
+    if telefono not in conversations:
+        conversations[telefono] = {
+            "messages": [],
+            "last_activity": datetime.now()
+        }
+
+    # Actualizar con el nuevo historial (limitado para no saturar contexto)
+    conversations[telefono]["messages"] = new_history[-20:]
+    conversations[telefono]["last_activity"] = datetime.now()

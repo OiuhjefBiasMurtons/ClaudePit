@@ -1,0 +1,10 @@
+# Ignorar backups con timestamp
+backups/*/
+
+# Mantener solo el backup base
+!backups/schema_backup.sql
+!backups/data_backup.sql
+!backups/README.md
+!backups/restore_instructions.md
+!backups/backup_metadata.json
+!backups/.gitkeep

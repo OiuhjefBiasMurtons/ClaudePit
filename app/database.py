@@ -7,6 +7,19 @@ def get_supabase_client() -> Client:
 
 
 def get_or_create_client(telefono: str, nombre: str) -> dict:
+    """
+    Busca un cliente por teléfono o lo crea si no existe.
+    Valida que los datos no estén vacíos antes de crear.
+    """
+    # Validar datos de entrada
+    if not telefono or not telefono.strip():
+        raise ValueError("El teléfono no puede estar vacío")
+    if not nombre or not nombre.strip():
+        raise ValueError("El nombre no puede estar vacío")
+
+    telefono = telefono.strip()
+    nombre = nombre.strip()
+
     supabase = get_supabase_client()
 
     # Buscar cliente existente
@@ -15,9 +28,13 @@ def get_or_create_client(telefono: str, nombre: str) -> dict:
     if result.data:
         return result.data[0]
 
-    # Crear nuevo cliente
+    # Crear nuevo cliente (solo si no existe)
     new_client = {"cel": telefono, "name": nombre}
     result = supabase.table("clients").insert(new_client).execute()
+
+    if not result.data:
+        raise Exception("Error al crear cliente en la base de datos")
+
     return result.data[0]
 
 

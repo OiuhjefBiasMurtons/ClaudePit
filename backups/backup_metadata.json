@@ -1,0 +1,90 @@
+{
+    "project_id": "vdpongjfmldvjxokhiov",
+    "project_name": "PitzBias",
+    "region": "us-east-2",
+    "database_version": "17.6.1.054",
+    "backup_date": "2026-01-29T23:22:52-05:00",
+    "tables": {
+        "clients": {
+            "rows": 1,
+            "rls_enabled": true,
+            "columns": [
+                "id",
+                "created_at",
+                "name",
+                "cel",
+                "address"
+            ]
+        },
+        "products": {
+            "rows": 5,
+            "rls_enabled": true,
+            "columns": [
+                "id",
+                "name",
+                "description",
+                "food_type",
+                "activo"
+            ]
+        },
+        "product_variants": {
+            "rows": 8,
+            "rls_enabled": true,
+            "columns": [
+                "id",
+                "product_id",
+                "nombre_variante",
+                "price"
+            ]
+        },
+        "orders": {
+            "rows": 2,
+            "rls_enabled": true,
+            "columns": [
+                "id",
+                "created_at",
+                "client_id",
+                "state",
+                "address_delivery",
+                "total_order",
+                "ticket_id"
+            ]
+        },
+        "order_details": {
+            "rows": 4,
+            "rls_enabled": true,
+            "columns": [
+                "id",
+                "order_id",
+                "variant_id",
+                "quantity",
+                "precio_unitario_congelado",
+                "nombre_producto_snapshot",
+                "note"
+            ]
+        }
+    },
+    "enums": {
+        "type_food": [
+            "PIZZA",
+            "LASAGNA",
+            "BEBIDA",
+            "ADICION",
+            "PAN"
+        ],
+        "type_order_state": [
+            "PREPARANDO",
+            "EN_CAMINO",
+            "ENTREGADO",
+            "CANCELADO"
+        ]
+    },
+    "total_records": 20,
+    "backup_files": [
+        "schema_backup.sql",
+        "data_backup.sql",
+        "README.md",
+        "restore_instructions.md",
+        "backup_metadata.json"
+    ]
+}

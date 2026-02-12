@@ -6,7 +6,7 @@ from app.database import get_or_create_client, get_menu
 from app.utils import format_menu_for_ai
 from app.ai_service import build_system_prompt, call_openai
 from app.tools import get_active_order
-from app.memory import add_message, get_conversation_history, clear_old_conversations, update_conversation_history
+from app.memory import add_message, get_conversation_history, clear_old_conversations
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -50,8 +50,8 @@ async def process_message(request: MessageRequest):
     try:
         logger.info(f"Procesando mensaje de {request.telefono}: {request.mensaje[:50]}...")
         
-        # Limpiar conversaciones viejas (>2 horas)
-        clear_old_conversations(max_age_minutes=120)
+        # Limpiar conversaciones viejas (>30 min)
+        clear_old_conversations()
 
         # Obtener cliente y menú
         cliente = get_or_create_client(request.telefono, request.nombre_cliente)
@@ -66,34 +66,20 @@ async def process_message(request: MessageRequest):
         # Obtener historial de conversación
         conversation_history = get_conversation_history(request.telefono)
 
-        # Construir descripción del pedido activo
-        pedido_info = ""
-        if pedido_activo and pedido_activo.get("items"):
-            items_desc = []
-            total = pedido_activo.get("total_order", 0)
-            for item in pedido_activo["items"]:
-                items_desc.append(f"{item.get('quantity')}x {item.get('product_name')} {item.get('variant_name')}")
-            pedido_info = f"Items: {', '.join(items_desc)} | Total: ${total:,.0f} | Dirección: {pedido_activo.get('address_delivery', 'sin definir')}"
+        # Guardar mensaje del usuario
+        add_message(request.telefono, "user", request.mensaje)
 
-        # Construir prompt y llamar a OpenAI (AHORA RETORNA TUPLA)
-        system_prompt = build_system_prompt(
-            nombre_cliente=cliente.get("name", "Cliente"),
-            direccion_guardada=cliente.get("address"),
-            order_id=pedido_activo.get("id", "N/A") if pedido_activo else "N/A",
-            estado_pedido=pedido_activo.get("state", "N/A") if pedido_activo else "N/A",
-            menu_formateado=menu_formateado,
-            pedido_info=pedido_info,
-            cobra_domicilio=False  # Ajusta según tu lógica de negocio
-        )
-        respuesta, new_history = call_openai(
+        # Construir prompt y llamar a OpenAI
+        system_prompt = build_system_prompt(cliente, menu_formateado, pedido_activo)
+        respuesta = call_openai(
             request.mensaje,
             system_prompt,
             client_id=cliente["id"],
             conversation_history=conversation_history
         )
 
-        # Actualizar el historial completo
-        update_conversation_history(request.telefono, new_history)
+        # Guardar respuesta del asistente
+        add_message(request.telefono, "assistant", respuesta)
         
         logger.info(f"Respuesta enviada a {request.telefono}")
 

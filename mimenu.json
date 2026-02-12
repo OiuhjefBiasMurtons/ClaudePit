@@ -1,0 +1,226 @@
+{
+  "pizzas": {
+    "precios_por_tamano": {
+      "Junior (21cm - 4 porciones)": 21000,
+      "Personal (4 porciones)": 29000,
+      "Pequeña": 37000,
+      "Mediana": 44000,
+      "Grande": 55000,
+      "Familiar": 0
+    },
+    "sabores": [
+      {
+        "nombre": "De la Casa",
+        "ingredientes": "Jamon, salami, cabano, cebolla, champiñones, pimenton"
+      },
+      {
+        "nombre": "Carne",
+        "ingredientes": "Jamon, salami, cabano, carne bolognesa"
+      },
+      {
+        "nombre": "Mediterranea",
+        "ingredientes": "Jamon, champiñones, cebolla, carne bolognesa"
+      },
+      {
+        "nombre": "Iberica",
+        "ingredientes": "Jamon, salami, cabano, pollo"
+      },
+      {
+        "nombre": "Peperoni",
+        "ingredientes": "Peperoni"
+      },
+      {
+        "nombre": "Bolognesa",
+        "ingredientes": "Jamon, maicitos, tomate, carne bolognesa, pimenton, cebolla"
+      },
+      {
+        "nombre": "Mexicana",
+        "ingredientes": "Jamon, carne bolognesa, maicitos, pimenton, jalapeños, cebolla, tomate"
+      },
+      {
+        "nombre": "Zamba",
+        "ingredientes": "Maduro, tocineta, maicitos"
+      },
+      {
+        "nombre": "Madurito",
+        "ingredientes": "Maduro, cabano, maicitos"
+      },
+      {
+        "nombre": "Hawaiana",
+        "ingredientes": "Jamon, piña"
+      },
+      {
+        "nombre": "Piña",
+        "ingredientes": "Piña, carne bolognesa"
+      },
+      {
+        "nombre": "Tropical",
+        "ingredientes": "Pollo, piña, tocineta"
+      },
+      {
+        "nombre": "Parmesana",
+        "ingredientes": "Queso parmesano, maduro, tocineta"
+      },
+      {
+        "nombre": "Del Campo",
+        "ingredientes": "Jamon, maicitos, tocineta, tomate"
+      },
+      {
+        "nombre": "Topo",
+        "ingredientes": "Pollo, tomate, tocineta"
+      },
+      {
+        "nombre": "Toposa",
+        "ingredientes": "Tocineta, pollo, salami"
+      },
+      {
+        "nombre": "Margarita",
+        "ingredientes": "Tomate, albahaca, aceite de oliva"
+      },
+      {
+        "nombre": "Vegetariana",
+        "ingredientes": "Cebolla, ajo, champinones, tomate, pimenton"
+      },
+      {
+        "nombre": "Margarita Especial",
+        "ingredientes": "Tomate, albahaca, tocineta, aceite de oliva"
+      },
+      {
+        "nombre": "Italiana",
+        "ingredientes": "Jamon, champinones, tomate, maicitos"
+      },
+      {
+        "nombre": "Primavera",
+        "ingredientes": "Pollo, tomate, maicitos"
+      },
+      {
+        "nombre": "Americana",
+        "ingredientes": "Jamon, salchicha, maicitos"
+      },
+      {
+        "nombre": "Julieta",
+        "ingredientes": "Jamon, salami, maicitos"
+      },
+      {
+        "nombre": "Pollo con Champiñones",
+        "ingredientes": "Pollo, champinones"
+      },
+      {
+        "nombre": "Pollo con Bolognesa y Piña",
+        "ingredientes": "Pollo, carne bolognesa, piña"
+      },
+      {
+        "nombre": "Pollo con Tocineta y Maiz",
+        "ingredientes": "Pollo, tocineta, maiz"
+      },
+      {
+        "nombre": "Pollo y Jamon",
+        "ingredientes": "Pollo, jamon"
+      },
+      {
+        "nombre": "Española",
+        "ingredientes": "Salami, cabano, aceitunas"
+      },
+      {
+        "nombre": "Picante",
+        "ingredientes": "Jamon, pollo, carne bolognesa, pimienta negra"
+      }
+    ]
+  },
+  "lasagnas": {
+    "sabores": [
+      {
+        "nombre": "Bolognesa",
+        "ingredientes": "Carne bolognesa",
+        "precios": {
+          "Pequeña": 14000,
+          "Grande": 20000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Bolognesa + Jamon",
+        "ingredientes": "Carne bolognesa, jamon",
+        "precios": {
+          "Pequeña": 14000,
+          "Grande": 20000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Pollo + Maicitos",
+        "ingredientes": "Pollo, maicitos",
+        "precios": {
+          "Pequeña": 14000,
+          "Grande": 20000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Pollo",
+        "ingredientes": "Pollo",
+        "precios": {
+          "Pequeña": 16000,
+          "Grande": 23000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Pocha",
+        "ingredientes": "Pollo, champinon",
+        "precios": {
+          "Pequeña": 16000,
+          "Grande": 23000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Mixta",
+        "ingredientes": "Pollo, carne bolognesa",
+        "precios": {
+          "Pequeña": 16000,
+          "Grande": 23000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Tropical",
+        "ingredientes": "Pollo, carne bolognesa, piña",
+        "precios": {
+          "Pequeña": 16000,
+          "Grande": 23000,
+          "Extra": 27000
+        }
+      },
+      {
+        "nombre": "Vegetariana",
+        "ingredientes": "Champinones, cebolla, ajo, tomate",
+        "precios": {
+          "Pequeña": 14000,
+          "Grande": 20000,
+          "Extra": 27000
+        }
+      }
+    ]
+  },
+  "entradas": [
+    {
+      "nombre": "Pancito con Queso Crema y Parmesano",
+      "precio": 10000
+    },
+    {
+      "nombre": "Pancito con Tomate y Queso Crema",
+      "precio": 10000
+    },
+    {
+      "nombre": "Pancito con Queso Mozzarella y Queso Crema",
+      "precio": 10000
+    }
+  ],
+  "notas": [
+    "Las pizzas tienen 6 tamaños: Junior, Personal, Pequeña, Mediana, Grande, Familiar",
+    "Todos los sabores de pizza están disponibles en todos los tamaños",
+    "Las lasagnas vienen acompañadas con pan de ajo",
+    "Las lasagnas tienen 3 tamaños: Pequeña, Grande, Extra"
+  ]
+}

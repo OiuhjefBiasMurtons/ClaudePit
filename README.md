@@ -226,6 +226,51 @@ Los logs de uvicorn muestran:
 - Llamadas a funciones de IA
 - Queries a la base de datos
 
+## 💾 Backups
+
+El proyecto incluye un sistema completo de backups para Supabase:
+
+### Backup Manual
+
+Ejecuta el script de backup:
+```bash
+python create_backup.py
+```
+
+Esto creará una carpeta en `backups/TIMESTAMP/` con:
+- `schema_backup.sql` - Estructura de la base de datos
+- `data_backup.sql` - Datos en formato SQL
+- `data_backup.json` - Datos en formato JSON
+- `README.md` - Información del backup
+
+### Backup Base
+
+En la carpeta `backups/` encontrarás:
+- **schema_backup.sql**: Esquema completo de la BD
+- **data_backup.sql**: Snapshot de datos actual
+- **restore_instructions.md**: Guía completa de restauración
+- **backup_metadata.json**: Metadata del backup
+
+### Restaurar un Backup
+
+Ver instrucciones detalladas en [`backups/restore_instructions.md`](backups/restore_instructions.md)
+
+**Método rápido (Supabase Dashboard):**
+1. Ve a SQL Editor en tu proyecto Supabase
+2. Ejecuta `schema_backup.sql`
+3. Ejecuta `data_backup.sql`
+
+### Backups Automáticos (Recomendado)
+
+Configura un cron job para backups diarios:
+```bash
+# Editar crontab
+crontab -e
+
+# Agregar línea para backup diario a las 2 AM
+0 2 * * * cd /ruta/a/pizzeria-bot && /ruta/a/Pit/bin/python create_backup.py
+```
+
 ## 🤝 Contribuir
 
 1. Fork el proyecto

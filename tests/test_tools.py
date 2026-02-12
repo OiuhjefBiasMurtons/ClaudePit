@@ -6,56 +6,66 @@ from app.tools import create_new_order
 
 class TestFormatMenu:
     def test_format_menu_empty(self):
-        """Verifica que retorna mensaje cuando no hay productos."""
+        """Verifica que retorna array vacío cuando no hay productos."""
         result = format_menu_for_ai([])
-        assert result == "No hay productos disponibles."
+        assert result == "[]"
 
     def test_format_menu_single_product(self):
-        """Verifica formateo de un producto con una variante."""
+        """Verifica formateo de un producto con una variante como JSON."""
+        import json
         menu_items = [
             {
-                "product_name": "Pizza Pepperoni",
-                "product_description": "Pizza clásica con pepperoni",
-                "variant_size": "Personal",
-                "variant_price": 15.00,
-                "variant_id": "uuid-123"
+                "producto": "Pizza Pepperoni",
+                "description": "Pizza clásica con pepperoni",
+                "food_type": "Pizza",
+                "size": "Personal",
+                "price": 15000,
+                "id": "uuid-123"
             }
         ]
         result = format_menu_for_ai(menu_items)
+        parsed = json.loads(result)
 
-        assert "Pizza Pepperoni" in result
-        assert "Pizza clásica con pepperoni" in result
-        assert "Personal" in result
-        assert "$15.00" in result
-        assert "uuid-123" in result
+        assert len(parsed) == 1
+        assert parsed[0]["name"] == "Pizza Pepperoni"
+        assert parsed[0]["ingredients"] == "Pizza clásica con pepperoni"
+        assert parsed[0]["category"] == "Pizza"
+        assert len(parsed[0]["sizes"]) == 1
+        assert parsed[0]["sizes"][0]["size"] == "Personal"
+        assert parsed[0]["sizes"][0]["price"] == 15000
+        assert parsed[0]["sizes"][0]["id"] == "uuid-123"
 
     def test_format_menu_multiple_variants(self):
-        """Verifica formateo de producto con múltiples variantes."""
+        """Verifica formateo de producto con múltiples variantes como JSON."""
+        import json
         menu_items = [
             {
-                "product_name": "Pizza Hawaiana",
-                "product_description": "Con piña y jamón",
-                "variant_size": "Personal",
-                "variant_price": 15.00,
-                "variant_id": "uuid-1"
+                "producto": "Pizza Hawaiana",
+                "description": "Con piña y jamón",
+                "food_type": "Pizza",
+                "size": "Personal",
+                "price": 15000,
+                "id": "uuid-1"
             },
             {
-                "product_name": "Pizza Hawaiana",
-                "product_description": "Con piña y jamón",
-                "variant_size": "Mediana",
-                "variant_price": 25.00,
-                "variant_id": "uuid-2"
+                "producto": "Pizza Hawaiana",
+                "description": "Con piña y jamón",
+                "food_type": "Pizza",
+                "size": "Mediana",
+                "price": 25000,
+                "id": "uuid-2"
             }
         ]
         result = format_menu_for_ai(menu_items)
+        parsed = json.loads(result)
 
-        # Debe aparecer el nombre del producto una sola vez
-        assert result.count("Pizza Hawaiana") == 1
-        # Deben aparecer ambas variantes
-        assert "Personal" in result
-        assert "Mediana" in result
-        assert "$15.00" in result
-        assert "$25.00" in result
+        # Debe haber un solo producto con 2 tamaños
+        assert len(parsed) == 1
+        assert parsed[0]["name"] == "Pizza Hawaiana"
+        assert len(parsed[0]["sizes"]) == 2
+        # Ordenados por precio
+        assert parsed[0]["sizes"][0]["price"] == 15000
+        assert parsed[0]["sizes"][1]["price"] == 25000
 
 
 class TestGenerateTicketId:
@@ -89,15 +99,27 @@ class TestCreateOrder:
         mock_client = MagicMock()
         mock_supabase.return_value = mock_client
 
-        # Mock insert order
-        mock_client.table.return_value.insert.return_value.execute.return_value.data = [
-            {"id": "order-uuid-123"}
-        ]
+        # Mock para validación de variant_ids (retorna que el ID existe)
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "product_variants":
+                # Mock para validación - retorna que el variant_id existe
+                mock_table.select.return_value.in_.return_value.execute.return_value.data = [
+                    {"id": "variant-1"}
+                ]
+            elif table_name == "orders":
+                # Mock para insert y select de orders
+                mock_table.insert.return_value.execute.return_value.data = [
+                    {"id": "order-uuid-123"}
+                ]
+                mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+                    {"id": "order-uuid-123", "total_order": 40.00, "ticket_id": "TDP-20250120-001"}
+                ]
+            elif table_name == "order_details":
+                mock_table.insert.return_value.execute.return_value.data = [{}]
+            return mock_table
 
-        # Mock select updated order
-        mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-            {"id": "order-uuid-123", "total_order": 40.00}
-        ]
+        mock_client.table.side_effect = table_side_effect
 
         # Execute
         result = create_new_order(
@@ -112,6 +134,305 @@ class TestCreateOrder:
         assert result["order_id"] == "order-uuid-123"
         assert result["ticket_id"] == "TDP-20250120-001"
         assert result["total"] == 40.00
+        assert result["address"] == "Calle 123"
 
         # Verify table calls
         assert mock_client.table.called
+
+
+class TestSecurityValidation:
+    """Tests de validación de seguridad (client_id ownership)"""
+
+    @patch("app.tools.get_supabase_client")
+    def test_add_items_rejects_wrong_client(self, mock_supabase):
+        """Verifica que add_items_to_order rechaza pedidos de otros clientes"""
+        from app.tools import add_items_to_order
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: el pedido pertenece a otro cliente
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"client_id": "other-client-uuid"}
+        ]
+        mock_client.table.return_value = mock_table
+
+        # Ejecutar
+        result = add_items_to_order(
+            order_id="order-123",
+            items=[{"variant_id": "variant-1", "quantity": 1}],
+            client_id="my-client-uuid"
+        )
+
+        # Verificar que retorna error
+        assert "error" in result
+        assert "No tienes permiso" in result["error"]
+
+    @patch("app.tools.get_supabase_client")
+    def test_replace_item_rejects_wrong_client(self, mock_supabase):
+        """Verifica que replace_item_in_order rechaza pedidos de otros clientes"""
+        from app.tools import replace_item_in_order
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: el pedido pertenece a otro cliente
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"client_id": "other-client-uuid"}
+        ]
+        mock_client.table.return_value = mock_table
+
+        # Ejecutar
+        result = replace_item_in_order(
+            order_id="order-123",
+            old_variant_id="old-variant",
+            new_variant_id="new-variant",
+            client_id="my-client-uuid"
+        )
+
+        # Verificar que retorna error
+        assert "error" in result
+        assert "No tienes permiso" in result["error"]
+
+    @patch("app.tools.get_supabase_client")
+    def test_update_address_rejects_wrong_client(self, mock_supabase):
+        """Verifica que update_order_address rechaza pedidos de otros clientes"""
+        from app.tools import update_order_address
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: el pedido pertenece a otro cliente
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"client_id": "other-client-uuid"}
+        ]
+        mock_client.table.return_value = mock_table
+
+        # Ejecutar
+        result = update_order_address(
+            order_id="order-123",
+            new_address="Nueva direccion",
+            client_id="my-client-uuid"
+        )
+
+        # Verificar que retorna error
+        assert "error" in result
+        assert "No tienes permiso" in result["error"]
+
+    @patch("app.tools.get_supabase_client")
+    def test_confirm_order_rejects_wrong_client(self, mock_supabase):
+        """Verifica que confirm_order rechaza pedidos de otros clientes"""
+        from app.tools import confirm_order
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: el pedido pertenece a otro cliente
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"client_id": "other-client-uuid"}
+        ]
+        mock_client.table.return_value = mock_table
+
+        # Ejecutar
+        result = confirm_order(
+            order_id="order-123",
+            client_id="my-client-uuid"
+        )
+
+        # Verificar que retorna error
+        assert "error" in result
+        assert "No tienes permiso" in result["error"]
+
+    @patch("app.tools.get_supabase_client")
+    def test_cancel_order_rejects_wrong_client(self, mock_supabase):
+        """Verifica que cancel_order rechaza pedidos de otros clientes"""
+        from app.tools import cancel_order
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: el pedido pertenece a otro cliente
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+            {"client_id": "other-client-uuid"}
+        ]
+        mock_client.table.return_value = mock_table
+
+        # Ejecutar
+        result = cancel_order(
+            order_id="order-123",
+            client_id="my-client-uuid"
+        )
+
+        # Verificar que retorna error
+        assert "error" in result
+        assert "No tienes permiso" in result["error"]
+
+
+class TestGetClientOrders:
+    """Tests para la función get_client_orders"""
+
+    @patch("app.tools.get_supabase_client")
+    def test_get_client_orders_sin_pedidos(self, mock_supabase):
+        """Verifica que retorna lista vacía cuando el cliente no tiene pedidos"""
+        from app.tools import get_client_orders
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock: sin pedidos
+        mock_table = MagicMock()
+        mock_table.select.return_value.eq.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+        mock_client.table.return_value = mock_table
+
+        # Ejecutar
+        result = get_client_orders(client_id="client-uuid")
+
+        # Verificar
+        assert result["count"] == 0
+        assert result["orders"] == []
+        assert "No tienes pedidos" in result["message"]
+
+    @patch("app.tools.get_supabase_client")
+    def test_get_client_orders_con_pedidos_activos(self, mock_supabase):
+        """Verifica que retorna pedidos activos correctamente"""
+        from app.tools import get_client_orders
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock de pedidos
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "orders":
+                mock_table.select.return_value.eq.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+                    {
+                        "id": "order-123",
+                        "ticket_id": "TDP-20250205-001",
+                        "state": "PREPARANDO",
+                        "total_order": 55000,
+                        "address_delivery": "Cra 74 #120-39",
+                        "payment_method": "efectivo",
+                        "created_at": "2025-02-05T23:00:00"
+                    }
+                ]
+            elif table_name == "order_details":
+                mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+                    {
+                        "quantity": 1,
+                        "product_variants": {
+                            "nombre_variante": "Familiar",
+                            "price": 55000,
+                            "products": {"name": "Pizza Hawaiana"}
+                        }
+                    }
+                ]
+            return mock_table
+
+        mock_client.table.side_effect = table_side_effect
+
+        # Ejecutar
+        result = get_client_orders(client_id="client-uuid")
+
+        # Verificar
+        assert result["count"] == 1
+        assert len(result["orders"]) == 1
+        assert result["orders"][0]["order_id"] == "order-123"
+        assert result["orders"][0]["state"] == "PREPARANDO"
+        assert result["orders"][0]["total"] == 55000
+        assert len(result["orders"][0]["items"]) == 1
+
+    @patch("app.tools.get_supabase_client")
+    def test_get_client_orders_filtra_quantity_negativa(self, mock_supabase):
+        """Verifica que filtra items con quantity <= 0"""
+        from app.tools import get_client_orders
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock con item corrupto
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "orders":
+                mock_table.select.return_value.eq.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+                    {
+                        "id": "order-123",
+                        "ticket_id": "TDP-20250205-001",
+                        "state": "PREPARANDO",
+                        "total_order": 55000,
+                        "address_delivery": "Cra 74",
+                        "payment_method": "efectivo",
+                        "created_at": "2025-02-05T23:00:00"
+                    }
+                ]
+            elif table_name == "order_details":
+                mock_table.select.return_value.eq.return_value.execute.return_value.data = [
+                    {
+                        "quantity": -1,  # Corrupto
+                        "product_variants": {
+                            "nombre_variante": "Familiar",
+                            "price": 55000,
+                            "products": {"name": "Pizza Hawaiana"}
+                        }
+                    },
+                    {
+                        "quantity": 1,  # Válido
+                        "product_variants": {
+                            "nombre_variante": "Personal",
+                            "price": 22000,
+                            "products": {"name": "Pizza Margarita"}
+                        }
+                    }
+                ]
+            return mock_table
+
+        mock_client.table.side_effect = table_side_effect
+
+        # Ejecutar
+        result = get_client_orders(client_id="client-uuid")
+
+        # Verificar que solo retorna el item válido
+        assert result["count"] == 1
+        assert len(result["orders"][0]["items"]) == 1
+        assert result["orders"][0]["items"][0]["product_name"] == "Pizza Margarita"
+
+    @patch("app.tools.get_supabase_client")
+    def test_get_client_orders_include_completed(self, mock_supabase):
+        """Verifica que puede incluir pedidos completados"""
+        from app.tools import get_client_orders
+
+        mock_client = MagicMock()
+        mock_supabase.return_value = mock_client
+
+        # Mock con pedido entregado
+        def table_side_effect(table_name):
+            mock_table = MagicMock()
+            if table_name == "orders":
+                # Mock para include_completed=True (sin filtro de estado)
+                mock_table.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+                    {
+                        "id": "order-456",
+                        "ticket_id": "TDP-20250204-001",
+                        "state": "ENTREGADO",
+                        "total_order": 30000,
+                        "address_delivery": "Cra 73",
+                        "payment_method": "transferencia",
+                        "created_at": "2025-02-04T20:00:00"
+                    }
+                ]
+            elif table_name == "order_details":
+                mock_table.select.return_value.eq.return_value.execute.return_value.data = []
+            return mock_table
+
+        mock_client.table.side_effect = table_side_effect
+
+        # Ejecutar con include_completed=True
+        result = get_client_orders(client_id="client-uuid", include_completed=True)
+
+        # Verificar
+        assert result["count"] == 1
+        assert result["orders"][0]["state"] == "ENTREGADO"
