@@ -461,10 +461,11 @@ def replace_item_in_order(order_id: str, old_variant_id: str, new_variant_id: st
     }
 
 
-def update_order_address(order_id: str, new_address: str, client_id: str) -> dict:
+def update_order_address(order_id: str, new_address: str, client_id: str, barrio: str = "") -> dict:
     """
     Actualiza la dirección de entrega de un pedido.
     Solo permite modificar pedidos en estado PREPARANDO y que pertenezcan al cliente.
+    Si se indica barrio, valida cobertura y actualiza barrio_id y precio_domicilio.
     """
     supabase = get_supabase_client()
 
@@ -478,12 +479,33 @@ def update_order_address(order_id: str, new_address: str, client_id: str) -> dic
     if validation_error:
         return validation_error
 
-    supabase.table("orders").update({"address_delivery": new_address}).eq("id", order_id).execute()
+    # Validar barrio y obtener precio de domicilio
+    if not barrio:
+        return {"error": "Debes indicar el barrio de la nueva dirección para confirmar cobertura."}
+
+    barrio_result = supabase.table("barrios") \
+        .select("id, nombre, precio_domicilio") \
+        .ilike("nombre", barrio) \
+        .eq("activo", True) \
+        .execute()
+
+    if not barrio_result.data:
+        return {"error": f"No tenemos cobertura en el barrio '{barrio}'. Consulta los barrios disponibles."}
+
+    barrio_data = barrio_result.data[0]
+
+    supabase.table("orders").update({
+        "address_delivery": new_address,
+        "barrio_id": barrio_data["id"],
+        "precio_domicilio": barrio_data["precio_domicilio"]
+    }).eq("id", order_id).execute()
 
     return {
         "order_id": order_id,
         "new_address": new_address,
-        "message": "Dirección actualizada correctamente"
+        "barrio": barrio_data["nombre"],
+        "precio_domicilio": barrio_data["precio_domicilio"],
+        "message": "Dirección y barrio actualizados correctamente"
     }
 
 

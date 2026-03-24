@@ -38,6 +38,24 @@ def get_or_create_client(telefono: str, nombre: str) -> dict:
     return result.data[0]
 
 
+def update_client_address(telefono: str, nueva_direccion: str) -> None:
+    """Actualiza la dirección guardada del cliente cuando entrega una nueva."""
+    supabase = get_supabase_client()
+    supabase.table("clients") \
+        .update({"address": nueva_direccion}) \
+        .eq("cel", telefono) \
+        .execute()
+
+
+def update_client_barrio(telefono: str, barrio: str) -> None:
+    """Guarda el barrio confirmado del cliente para no volver a preguntarlo."""
+    supabase = get_supabase_client()
+    supabase.table("clients") \
+        .update({"barrio": barrio}) \
+        .eq("cel", telefono) \
+        .execute()
+
+
 def get_barrios() -> list:
     """Obtiene los barrios activos con cobertura de delivery."""
     supabase = get_supabase_client()
@@ -54,7 +72,7 @@ def get_menu() -> list:
     # JOIN entre products y product_variants usando la sintaxis correcta de Supabase
     result = supabase.table("product_variants").select(
         "id, nombre_variante, price, product_id, products!inner(name, description, food_type)"
-    ).execute()
+    ).eq("activo", True).execute()
     
     # Formatear los datos para que coincidan con el formato esperado
     formatted_menu = []
