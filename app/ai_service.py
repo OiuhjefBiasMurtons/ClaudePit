@@ -4,7 +4,6 @@ from openai import OpenAI
 from app.config import settings
 from app.tools import (
     create_new_order,
-    get_active_order,
     add_items_to_order,
     replace_item_in_order,
     update_order_address,
@@ -239,19 +238,32 @@ TOOLS = [
 ]
 
 
-def build_system_prompt(nombre_cliente, direccion_guardada, order_id, estado_pedido, pedido_info="", barrio_session=""):
+def build_system_prompt(nombre_cliente, direccion_guardada, pedidos_activos: list, barrio_session=""):
     """
     System prompt conciso: reglas primero, contexto del cliente, flujo de pedido.
     El menú y los barrios se inyectan por separado con build_menu_context().
+    pedidos_activos: lista de dicts con claves order_id, estado, info.
     """
-    tiene_pedido = order_id != "N/A"
+    tiene_pedido = len(pedidos_activos) > 0
     barrio_display = barrio_session or "No confirmado aún"
     dir_display = direccion_guardada or "No registrada"
 
     if tiene_pedido:
-        contexto_pedido = f"order_id={order_id} | estado={estado_pedido} | {pedido_info or 'sin items'}"
+        if len(pedidos_activos) == 1:
+            p = pedidos_activos[0]
+            contexto_pedido = f"order_id={p['order_id']} | estado={p['estado']} | {p['info']}"
+            pedido_header = f'order_id = "{p["order_id"]}"'
+        else:
+            lines = [
+                f"[{i+1}] order_id={p['order_id']} | estado={p['estado']} | {p['info']}"
+                for i, p in enumerate(pedidos_activos)
+            ]
+            contexto_pedido = "\n    ".join(lines)
+            ids = ", ".join([f'"{p["order_id"]}"' for p in pedidos_activos])
+            pedido_header = f"{len(pedidos_activos)} pedidos activos: {ids}"
     else:
         contexto_pedido = "Sin pedido activo"
+        pedido_header = "sin pedido activo"
 
     return f"""Eres el asistente de pedidos de "Taller de la Pizza" en WhatsApp. Tu único rol es tomar pedidos de forma ágil y precisa.
 
@@ -338,7 +350,7 @@ Respuesta:
 *Pago:* [método] | *Subtotal:* $X | *Domicilio:* $X | *Total:* $X 🍕
 ```
 
-## FLUJO — CON PEDIDO ACTIVO (order_id = "{order_id}")
+## FLUJO — CON PEDIDO ACTIVO ({pedido_header})
 
 Verifica el estado PRIMERO:
 - EN_CAMINO → "Tu pedido ya va en camino 🛵. ¿Quieres hacer un nuevo pedido?"

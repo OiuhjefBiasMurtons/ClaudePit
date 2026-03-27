@@ -220,32 +220,30 @@ def create_new_order(client_id: str, items: list, delivery_address: str, payment
     }
 
 
-def get_active_order(client_id: str) -> dict | None:
+def get_active_orders(client_id: str) -> list[dict]:
     """
-    Busca pedido activo del cliente.
+    Retorna todos los pedidos activos del cliente ordenados por fecha descendente.
     Un pedido está activo si NO está ENTREGADO ni CANCELADO.
     Estados activos: PREPARANDO, EN_CAMINO
-    Retorna order con sus order_details incluyendo nombres de productos.
+    Cada pedido incluye sus order_details con nombres de productos.
     """
     supabase = get_supabase_client()
 
-    # Buscar orden activa (no entregada ni cancelada)
-    result = supabase.table("orders").select("*").eq("client_id", client_id).not_.in_("state", ["ENTREGADO", "CANCELADO"]).order("created_at", desc=True).limit(1).execute()
+    result = supabase.table("orders").select("*").eq("client_id", client_id).not_.in_("state", ["ENTREGADO", "CANCELADO"]).order("created_at", desc=True).execute()
 
     if not result.data:
-        return None
+        return []
 
-    order = result.data[0]
+    orders = []
+    for order in result.data:
+        details_result = supabase.table("order_details") \
+            .select("*, product_variants(*, products(*))") \
+            .eq("order_id", order["id"]) \
+            .execute()
+        order["items"] = _format_order_items(details_result.data)
+        orders.append(order)
 
-    # Obtener detalles del pedido con nombres de productos
-    details_result = supabase.table("order_details") \
-        .select("*, product_variants(*, products(*))") \
-        .eq("order_id", order["id"]) \
-        .execute()
-
-    order["items"] = _format_order_items(details_result.data)
-
-    return order
+    return orders
 
 
 def _validate_order_belongs_to_client(supabase, order_id: str, client_id: str) -> dict | None:

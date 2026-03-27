@@ -39,7 +39,7 @@ def format_menu_for_ai(menu_items: list) -> str:
     # Convertir a lista
     menu_list = list(products.values())
 
-    return json.dumps(menu_list, ensure_ascii=False, indent=2)
+    return json.dumps(menu_list, ensure_ascii=False)
 
 
 
@@ -48,7 +48,7 @@ def format_barrios_for_ai(barrios: list) -> str:
     import json
     if not barrios:
         return "[]"
-    return json.dumps(barrios, ensure_ascii=False, indent=2)
+    return json.dumps(barrios, ensure_ascii=False)
 
 
 def generate_ticket_id() -> str:
